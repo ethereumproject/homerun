@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -54,50 +55,18 @@ func main() {
 	}
 
 	log.Printf("Found %d chains...\n", len(runs))
+	var dones = make(chan error)
 
-	cmds := startNodes(runs)
-	dones := make(chan error, 2)
-
-	go func() {
-		for _, cmd := range cmds {
-			dones <- cmd.Wait()
-		}
-	}()
-
+	startNodes(runs, dones)
 	connectNodes(runs)
 
 	for _, r := range runs {
 		log.Printf("Chain '%s' RPC listening on: %s:%d", r.ChainIdentity, hrRPCDomain, r.RPCPort)
 	}
 
-	go func() {
-		// sigc is a single-val channel for listening to program interrupt
-		var sigc = make(chan os.Signal, 1)
-		signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
-		defer signal.Stop(sigc)
-		sig := <-sigc
-		log.Printf("Got %v, shutting down...", sig)
-		for i, c := range cmds {
-			if err := c.Process.Kill(); err != nil {
-				log.Fatalln("Failed to kill", err)
-			} else {
-				log.Printf("Killed process %d\n", i)
-			}
-		}
+	// block until dones closes (interrupt or error)
+	<-dones
 
-		close(dones)
-	}()
-
-	numDones := 0
-	for {
-		select {
-		case <-dones:
-			numDones++
-			if numDones == len(runs) {
-				return
-			}
-		}
-	}
 }
 
 func connectNodes(runs []*gethExec) {
@@ -139,9 +108,18 @@ func (g *gethExec) sendAddPeer(enode string) (bool, error) {
 	return false, errors.New("no result from rpc response")
 }
 
-func startNodes(runs []*gethExec) []*exec.Cmd {
+func startNodes(runs []*gethExec, dones chan error) {
 
 	cmds := []*exec.Cmd{}
+
+	go func() {
+		select {
+		case err := <-dones:
+			if err != nil {
+				log.Fatalln(err)
+			}
+		}
+	}()
 
 	for _, run := range runs {
 		go func(run *gethExec) {
@@ -156,14 +134,37 @@ func startNodes(runs []*gethExec) []*exec.Cmd {
 				"--cache", strconv.Itoa(defaultCacheSize),
 				"--rpcapi", strings.Join(defaultRPCAPIMethods, ","),
 				"--log-dir", filepath.Join(hrBaseDir, run.ChainIdentity, "logs"),
-				// "2>>", filepath.Join(hrBaseDir, run.ChainIdentity, "log.txt"),
+				// "--dne",
 			)
-			if e := cmd.Start(); e != nil {
-				log.Fatal(e)
-			}
 			cmds = append(cmds, cmd)
+
+			// capture helpful debugging error output
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if e := cmd.Run(); e != nil {
+				log.Printf("Chain '%s' error: %s: %s\n", run.ChainIdentity, e, stderr.String())
+				dones <- e
+			}
 		}(run)
 	}
+
+	go func() {
+		// sigc is a single-val channel for listening to program interrupt
+		var sigc = make(chan os.Signal, 1)
+		signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(sigc)
+		sig := <-sigc
+		log.Printf("Got %v, shutting down...", sig)
+		for i, c := range cmds {
+			if err := c.Process.Kill(); err != nil {
+				log.Fatalln("Failed to kill", err)
+			} else {
+				log.Printf("Killed process %d\n", i)
+			}
+		}
+		close(dones)
+	}()
+
 	// Wait for rpc to get up and running
 	var ticker = time.Tick(time.Second)
 	var done = make(chan (bool))
@@ -194,8 +195,6 @@ func startNodes(runs []*gethExec) []*exec.Cmd {
 		}
 	}()
 	<-done
-
-	return cmds
 }
 
 func collectChains(basePath string) ([]*gethExec, error) {
