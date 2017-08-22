@@ -1,0 +1,124 @@
+{
+    "identity": "red",
+    "name": "Morden Testnet (Homerun Red)",
+    "state": {
+        "startingNonce": 5
+    },
+    "network": 13,
+    "consensus": "ethash-test",
+    "genesis": {
+        "nonce": "0x00006d6f7264656e",
+        "timestamp": "",
+        "parentHash": "",
+        "extraData": "",
+        "gasLimit": "0x2FEFD8",
+        "difficulty": "0x020000",
+        "mixhash": "0x00000000000000000000000000000000000000647572616c65787365646c6578",
+        "coinbase": "",
+        "alloc": {
+            "0000000000000000000000000000000000000001": {
+                "balance": "1"
+            },
+            "0000000000000000000000000000000000000002": {
+                "balance": "1"
+            },
+            "0000000000000000000000000000000000000003": {
+                "balance": "1"
+            },
+            "0000000000000000000000000000000000000004": {
+                "balance": "1"
+            },
+            "102e61f5d8f9bc71d0ad4a084df4e65e05ce0e1c": {
+                "balance": "1606938044258990275541962092341162602522202993782792835301376"
+            }
+        }
+    },
+    "chainConfig": {
+        "forks": [
+            {
+                "name": "Homestead",
+                "block": 49,
+                "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "features": [
+                    {
+                        "id": "difficulty",
+                        "options": {
+                            "type": "homestead"
+                        }
+                    },
+                    {
+                        "id": "gastable",
+                        "options": {
+                            "type": "homestead"
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "GasReprice",
+                "block": 88,
+                "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "features": [
+                    {
+                        "id": "gastable",
+                        "options": {
+                            "type": "eip150"
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "The DAO Hard Fork",
+                "block": 100,
+                "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "features": []
+            },
+            {
+                "name": "Diehard",
+                "block": 130,
+                "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "features": [
+                    {
+                        "id": "eip155",
+                        "options": {
+                            "chainID": 62
+                        }
+                    },
+                    {
+                        "id": "gastable",
+                        "options": {
+                            "type": "eip160"
+                        }
+                    },
+                    {
+                        "id": "difficulty",
+                        "options": {
+                            "length": 2000,
+                            "type": "ecip1010"
+                        }
+                    },
+                    {
+                        "id": "reward",
+                        "options": {
+                            "era": 50,
+                            "type": "ecip1017"
+                        }
+                    }
+                ]
+            }
+        ],
+        "badHashes": [
+            {
+                "Block": 383792,
+                "Hash": "0x9690db54968a760704d99b8118bf79d565711669cefad24b51b5b1013d827808"
+            },
+            {
+                "Block": 1915277,
+                "Hash": "0x3bef9997340acebc85b84948d849ceeff74384ddf512a20676d424e972a3c3c4"
+            }
+        ]
+    },
+    "bootstrap": [
+      "enode://fb28713820e718066a2f5df6250ae9d07cff22f672dbf26be6c75d088f821a9ad230138ba492c533a80407d054b1436ef18e951bb65e6901553516c8dffe8ff0@104.155.176.151:30304"
+    ]
+}

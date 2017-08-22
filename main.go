@@ -25,9 +25,10 @@ type gethExec struct {
 	Executable    string
 	ChainIdentity string // set by containing subdir name
 	Enode         string // set automatically
-	RPCPort       int    // set in homerun, with 8545 as reference default
-	ListenPort    int
-	Client        rpc.Client
+	// RPCPort       int    // set in homerun, with 8545 as reference default
+	// ListenPort    int
+	Client    rpc.Client
+	ConfFlags []string // set with file anything.conf in chain subdir. should be just like a bash script but without the executable name. will parse just strings separated by spaces
 }
 
 var defaultRPCAPIMethods = []string{"admin", "eth", "net", "web3", "miner", "personal", "debug"}
@@ -61,7 +62,7 @@ func main() {
 	connectNodes(runs)
 
 	for _, r := range runs {
-		log.Printf("Chain '%s' RPC listening on: %s:%d", r.ChainIdentity, hrRPCDomain, r.RPCPort)
+		log.Printf("Chain '%s' configured: %v", r.ChainIdentity, r.ConfFlags)
 	}
 
 	// block until dones closes (interrupt or error)
@@ -124,18 +125,9 @@ func startNodes(runs []*gethExec, dones chan error) {
 	for _, run := range runs {
 		go func(run *gethExec) {
 			log.Printf("Starting chain '%s'...\n", run.ChainIdentity)
-			cmd := exec.Command(run.Executable,
-				"--datadir", hrBaseDir,
-				"--chain", run.ChainIdentity,
-				"--nodiscover",
-				"--port", strconv.Itoa(run.ListenPort),
-				"--rpc",
-				"--rpcport", strconv.Itoa(run.RPCPort),
-				"--cache", strconv.Itoa(defaultCacheSize),
-				"--rpcapi", strings.Join(defaultRPCAPIMethods, ","),
-				"--log-dir", filepath.Join(hrBaseDir, run.ChainIdentity, "logs"),
-				// "--dne",
-			)
+
+			cmd := exec.Command(run.Executable, run.ConfFlags...) // "--dne",
+
 			cmds = append(cmds, cmd)
 
 			// capture helpful debugging error output
@@ -211,19 +203,10 @@ func collectChains(basePath string) ([]*gethExec, error) {
 		}
 		// log.Println("chain.Name()", chain.Name()) // eg. 'blue'
 
-		port := defaultRPCPort + i
-		client, err := rpc.NewClient(fmt.Sprintf("%s:%d", hrRPCDomain, port))
-		if err != nil {
-			return runnables, err
-		}
-
 		executable := &gethExec{
 			ChainIdentity: chain.Name(),
-			Client:        client,
-			RPCPort:       port,
-			ListenPort:    defaultListenPort,
+			// Client:        client, // established after configuration is parsed or assigned by default
 		}
-		defaultListenPort++
 
 		files, err := ioutil.ReadDir(filepath.Join(hrBaseDir, chain.Name()))
 		if err != nil {
@@ -234,17 +217,63 @@ func collectChains(basePath string) ([]*gethExec, error) {
 				continue
 			}
 			fullFilename := filepath.Join(hrBaseDir, chain.Name(), file.Name())
-			perms, err := permbits.Stat(fullFilename)
-			if err != nil {
-				return runnables, err
+			perms, e := permbits.Stat(fullFilename)
+			if e != nil {
+				return runnables, e
 			}
 			if perms.UserExecute() {
 				if executable.Executable == "" {
 					executable.Executable = fullFilename
 				}
 			}
-			// Include toml chain config here eventually...
+
+			// set up custom flags from .conf file
+			if filepath.Ext(file.Name()) == ".conf" {
+				b, e := ioutil.ReadFile(filepath.Join(hrBaseDir, chain.Name(), file.Name()))
+				if e != nil {
+					return runnables, e
+				}
+
+				bs := string(b)
+				sN := strings.Split(bs, " ")
+				ssN := []string{}
+				for _, s := range sN {
+					ssN = append(ssN, strings.Split(s, "=")...)
+				}
+
+				for i, s := range ssN {
+					ssN[i] = strings.TrimSpace(s)
+				}
+				executable.ConfFlags = sN
+			}
 		}
+
+		// set default configuration if not configured by .conf file
+		if executable.ConfFlags == nil {
+			executable.ConfFlags = []string{
+				"--datadir", hrBaseDir,
+				"--chain", executable.ChainIdentity,
+				"--nodiscover",
+				"--port", strconv.Itoa(defaultListenPort + i),
+				"--rpc",
+				"--rpcport", strconv.Itoa(defaultRPCPort + i),
+				"--cache", strconv.Itoa(defaultCacheSize),
+				"--rpcapi", strings.Join(defaultRPCAPIMethods, ","),
+				"--log-dir", filepath.Join(hrBaseDir, executable.ChainIdentity, "logs"),
+			}
+		}
+
+		p := getFromFlags(executable.ConfFlags, []string{"rpc-port", "rpcport"})
+		if p == "" {
+			log.Println(executable.ConfFlags)
+			return runnables, errors.New("Chain '" + executable.ChainIdentity + "': RPC is required to be enabled.")
+		}
+
+		client, err := rpc.NewClient(fmt.Sprintf("%s:%s", hrRPCDomain, p))
+		if err != nil {
+			return runnables, err
+		}
+		executable.Client = client
 		runnables = append(runnables, executable)
 	}
 	return runnables, nil
@@ -279,6 +308,20 @@ func (g *gethExec) getRPCMap(method string) (map[string]interface{}, error) {
 		return nil, errConvertJSON
 	}
 	return nil, errors.New("no result from rpc response")
+}
+
+func getFromFlags(confFlags []string, keys []string) string {
+	for i, s := range confFlags {
+		for _, k := range keys {
+			if s == k || strings.TrimPrefix(s, "-") == k || strings.TrimPrefix(s, "--") == k {
+				// avoid out of bounds
+				if i != len(confFlags)-1 {
+					return confFlags[i+1]
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func mustMakeDirPath(p string) string {
