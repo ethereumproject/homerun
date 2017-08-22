@@ -6,13 +6,11 @@ in a private network.
 Chain Identity should be decided by convention by putting the executables and
 configs in named subdirectories.
 
-It should set `--max-peers` to the number of total nodes that will run.
-
 It should set each node to run on a different RPC port, and it should print
 the ports each executable is exposing for RPC.
 
-It should not enable mining on any of them by default.
-
+It should not enable mining on any of them by default; that can be switched on
+with rpc or `geth attach`.
 
 Base dir should look like:
 
@@ -22,16 +20,13 @@ basedir/ # homerun --dir=basedir
 basedir/red/
 basedir/red/geth-master # <- executable
 basedir/red/chain.json # <- config
-basedir/red/flags.toml # <- optional flags for this node
+basedir/red/flags.conf # <- optional flags for this node
 
 basedir/blue/
 basedir/blue/geth-v3.5.86
 basedir/blue/chain.json
-basedir/blue/flags.toml
-
-# Planned...
-# basedir/yellow/
-# basedir/yellow/geth-hf
-# basedir/yellow/flags.toml
+basedir/blue/flags.conf
 
 ```
+
+Can configure as many chains/instances like this as desired.
