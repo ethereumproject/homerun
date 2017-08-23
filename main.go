@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,6 +21,17 @@ import (
 	"github.com/phayes/permbits"
 	// "github.com/BurntSushi/toml"
 )
+
+var defaultRPCAPIMethods = []string{"admin", "eth", "net", "web3", "miner", "personal", "debug"}
+var defaultCacheSize = 128
+var defaultRPCPort = 8545
+var defaultListenPort = 30303
+
+var errConvertJSON = errors.New("Could not convert JSON response to golang data type")
+var errRPCResponse = errors.New("No response from RPC")
+
+var hrBaseDir string
+var hrRPCDomain = "http://localhost"
 
 type gethExec struct {
 	Executable    string
@@ -31,15 +43,9 @@ type gethExec struct {
 	ConfFlags []string // set with file anything.conf in chain subdir. should be just like a bash script but without the executable name. will parse just strings separated by spaces
 }
 
-var defaultRPCAPIMethods = []string{"admin", "eth", "net", "web3", "miner", "personal", "debug"}
-var defaultCacheSize = 128
-var defaultRPCPort = 8545
-var defaultListenPort = 30303
-
-var errConvertJSON = errors.New("Could not convert JSON response to golang data type")
-
-var hrBaseDir string
-var hrRPCDomain = "http://localhost"
+func (g *gethExec) setEnode(s string) {
+	g.Enode = s
+}
 
 func init() {
 	flag.StringVar(&hrBaseDir, "dir", "", "base directory containing chain dirs")
@@ -70,45 +76,6 @@ func main() {
 
 }
 
-func connectNodes(runs []*gethExec) {
-	log.Println("Connecting nodes...")
-	for i, run := range runs {
-		for j, run2 := range runs {
-			if i < j && i != j {
-				res, err := run.sendAddPeer(run2.Enode)
-				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, err)
-			}
-		}
-	}
-}
-
-func (g *gethExec) sendAddPeer(enode string) (bool, error) {
-	req := map[string]interface{}{
-		"id":      new(int64),
-		"method":  "admin_addPeer",
-		"jsonrpc": "2.0",
-		"params":  []string{enode},
-	}
-
-	if err := g.Client.Send(req); err != nil {
-		return false, err
-	}
-
-	var res rpc.JSONSuccessResponse
-	if err := g.Client.Recv(&res); err != nil {
-		return false, err
-	}
-
-	if res.Result != nil {
-		mr, ok := res.Result.(bool)
-		if ok {
-			return mr, nil
-		}
-		return false, errConvertJSON
-	}
-	return false, errors.New("no result from rpc response")
-}
-
 func startNodes(runs []*gethExec, dones chan error) {
 
 	cmds := []*exec.Cmd{}
@@ -126,7 +93,7 @@ func startNodes(runs []*gethExec, dones chan error) {
 		go func(run *gethExec) {
 			log.Printf("Starting chain '%s'...\n", run.ChainIdentity)
 
-			cmd := exec.Command(run.Executable, run.ConfFlags...) // "--dne",
+			cmd := exec.Command(run.Executable, run.ConfFlags...)
 
 			cmds = append(cmds, cmd)
 
@@ -160,20 +127,21 @@ func startNodes(runs []*gethExec, dones chan error) {
 	// Wait for rpc to get up and running
 	var ticker = time.Tick(time.Second)
 	var done = make(chan (bool))
-	haveEnodes := 0
+	haveEnodes := map[string]bool{}
 	go func() {
 		for {
-			if haveEnodes >= len(runs) {
+			// since each entry is unique
+			if len(haveEnodes) >= len(runs) {
 				done <- true
 			}
 			select {
 			case <-ticker:
 				for _, run := range runs {
 					if run.Enode != "" {
-						haveEnodes++
+						haveEnodes[run.ChainIdentity] = true
 						continue
 					}
-					resMap, err := run.getRPCMap("admin_nodeInfo")
+					resMap, err := run.rpcMap("admin_nodeInfo", []interface{}{})
 					if err != nil {
 						log.Println("no enode:", err)
 						continue
@@ -187,6 +155,18 @@ func startNodes(runs []*gethExec, dones chan error) {
 		}
 	}()
 	<-done
+}
+
+func connectNodes(runs []*gethExec) {
+	log.Println("Connecting nodes...")
+	for i, run := range runs {
+		for j, run2 := range runs {
+			if i < j && i != j {
+				res, err := run.rpcBool("admin_addPeer", []string{run2.Enode})
+				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, err)
+			}
+		}
+	}
 }
 
 func collectChains(basePath string) ([]*gethExec, error) {
@@ -229,22 +209,11 @@ func collectChains(basePath string) ([]*gethExec, error) {
 
 			// set up custom flags from .conf file
 			if filepath.Ext(file.Name()) == ".conf" {
-				b, e := ioutil.ReadFile(filepath.Join(hrBaseDir, chain.Name(), file.Name()))
+				sNN, e := wordsFromFile(filepath.Join(hrBaseDir, chain.Name(), file.Name()))
 				if e != nil {
 					return runnables, e
 				}
-
-				bs := string(b)
-				sN := strings.Split(bs, " ")
-				ssN := []string{}
-				for _, s := range sN {
-					ssN = append(ssN, strings.Split(s, "=")...)
-				}
-
-				for i, s := range ssN {
-					ssN[i] = strings.TrimSpace(s)
-				}
-				executable.ConfFlags = sN
+				executable.ConfFlags = sNN
 			}
 		}
 
@@ -263,32 +232,67 @@ func collectChains(basePath string) ([]*gethExec, error) {
 			}
 		}
 
-		p := getFromFlags(executable.ConfFlags, []string{"rpc-port", "rpcport"})
-		if p == "" {
+		hasRpc := sliceContainsStrings(executable.ConfFlags, []string{"rpc"})
+		if !hasRpc {
 			log.Println(executable.ConfFlags)
 			return runnables, errors.New("Chain '" + executable.ChainIdentity + "': RPC is required to be enabled.")
 		}
 
-		client, err := rpc.NewClient(fmt.Sprintf("%s:%s", hrRPCDomain, p))
+		// set default rpc port if not set explicitly
+		rpcPort := valueInSliceFollowingKey(executable.ConfFlags, []string{"rpcport", "rpc-port"})
+		if rpcPort == "" {
+			rpcPort = strconv.Itoa(defaultRPCPort)
+		}
+
+		c := valueInSliceFollowingKey(executable.ConfFlags, []string{"chain"})
+		if c != "" {
+			executable.ChainIdentity = c
+		}
+
+		client, err := rpc.NewClient(fmt.Sprintf("%s:%s", hrRPCDomain, rpcPort))
 		if err != nil {
 			return runnables, err
 		}
 		executable.Client = client
+		log.Println("Create runnable: ", executable)
 		runnables = append(runnables, executable)
 	}
 	return runnables, nil
 }
 
-func (g *gethExec) setEnode(s string) {
-	g.Enode = s
-}
-
-func (g *gethExec) getRPCMap(method string) (map[string]interface{}, error) {
+func (g *gethExec) rpcBool(method string, params interface{}) (bool, error) {
 	req := map[string]interface{}{
 		"id":      new(int64),
 		"method":  method,
 		"jsonrpc": "2.0",
-		"params":  []interface{}{},
+		"params":  params,
+	}
+
+	if err := g.Client.Send(req); err != nil {
+		return false, err
+	}
+
+	var res rpc.JSONSuccessResponse
+	if err := g.Client.Recv(&res); err != nil {
+		return false, err
+	}
+
+	if res.Result != nil {
+		mr, ok := res.Result.(bool)
+		if ok {
+			return mr, nil
+		}
+		return false, errConvertJSON
+	}
+	return false, errRPCResponse
+}
+
+func (g *gethExec) rpcMap(method string, params interface{}) (map[string]interface{}, error) {
+	req := map[string]interface{}{
+		"id":      new(int64),
+		"method":  method,
+		"jsonrpc": "2.0",
+		"params":  params,
 	}
 
 	if err := g.Client.Send(req); err != nil {
@@ -307,10 +311,46 @@ func (g *gethExec) getRPCMap(method string) (map[string]interface{}, error) {
 		}
 		return nil, errConvertJSON
 	}
-	return nil, errors.New("no result from rpc response")
+	return nil, errRPCResponse
 }
 
-func getFromFlags(confFlags []string, keys []string) string {
+func wordsFromFile(filename string) ([]string, error) {
+	b, e := ioutil.ReadFile(filename)
+	if e != nil {
+		return nil, e
+	}
+	bs := string(b)
+
+	// extract only words from file, separating on whitespace and newlines
+	re := regexp.MustCompile(`[\s\n\\]`)
+	nonEmptyRe := regexp.MustCompile(`[\S]`)
+	sN := re.Split(bs, -1)
+	sNN := []string{}
+	for _, s := range sN {
+		ss := strings.TrimSpace(s)
+		if ss != "" && nonEmptyRe.MatchString(ss) {
+			sNN = append(sNN, ss)
+		}
+	}
+
+	// for _, s := range sNN {
+	// 	log.Println(" - ", s)
+	// }
+	return sNN, nil
+}
+
+func sliceContainsStrings(ss []string, s []string) bool {
+	for _, x := range ss {
+		for _, y := range s {
+			if x == y {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func valueInSliceFollowingKey(confFlags []string, keys []string) string {
 	for i, s := range confFlags {
 		for _, k := range keys {
 			if s == k || strings.TrimPrefix(s, "-") == k || strings.TrimPrefix(s, "--") == k {

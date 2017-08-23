@@ -1,0 +1,7 @@
+chaindata/
+dapp/
+keystore/
+logs/
+mlogs/
+nodekey
+geth*
