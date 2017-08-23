@@ -163,7 +163,7 @@ func connectNodes(runs []*gethExec) {
 		for j, run2 := range runs {
 			if i < j && i != j {
 				res, err := run.rpcBool("admin_addPeer", []string{run2.Enode})
-				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, err)
+				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, "(Error: ", err, ")")
 			}
 		}
 	}
@@ -232,7 +232,7 @@ func collectChains(basePath string) ([]*gethExec, error) {
 			}
 		}
 
-		hasRpc := sliceContainsStrings(executable.ConfFlags, []string{"rpc"})
+		hasRpc := sliceContainsStrings(executable.ConfFlags, []string{"-rpc", "--rpc"})
 		if !hasRpc {
 			log.Println(executable.ConfFlags)
 			return runnables, errors.New("Chain '" + executable.ChainIdentity + "': RPC is required to be enabled.")
@@ -254,7 +254,7 @@ func collectChains(basePath string) ([]*gethExec, error) {
 			return runnables, err
 		}
 		executable.Client = client
-		log.Println("Create runnable: ", executable)
+		// log.Println("Create runnable: ", executable)
 		runnables = append(runnables, executable)
 	}
 	return runnables, nil
@@ -340,8 +340,8 @@ func wordsFromFile(filename string) ([]string, error) {
 }
 
 func sliceContainsStrings(ss []string, s []string) bool {
-	for _, x := range ss {
-		for _, y := range s {
+	for _, x := range s {
+		for _, y := range ss {
 			if x == y {
 				return true
 			}
