@@ -260,16 +260,30 @@ func collectChains(basePath string) ([]*gethExec, error) {
 
 		// set default configuration if not configured by .conf file
 		if executable.ConfFlags == nil {
-			executable.ConfFlags = []string{
-				"--datadir", hrBaseDir,
-				"--chain", executable.ChainIdentity,
-				"--nodiscover",
-				"--port", strconv.Itoa(defaultListenPort + i),
-				"--rpc",
-				"--rpcport", strconv.Itoa(defaultRPCPort + i),
-				"--cache", strconv.Itoa(defaultCacheSize),
-				"--rpcapi", strings.Join(defaultGethRPCAPIMethods, ","),
-				"--log-dir", filepath.Join(hrBaseDir, executable.ChainIdentity, "logs"),
+			if executable.xecIs(geth) {
+				executable.ConfFlags = []string{
+					"--datadir", hrBaseDir,
+					"--chain", executable.ChainIdentity,
+					"--nodiscover",
+					"--port", strconv.Itoa(defaultListenPort + i),
+					"--rpc",
+					"--rpcport", strconv.Itoa(defaultRPCPort + i),
+					"--cache", strconv.Itoa(defaultCacheSize),
+					"--rpcapi", strings.Join(defaultGethRPCAPIMethods, ","),
+					"--log-dir", filepath.Join(hrBaseDir, executable.ChainIdentity, "logs"),
+				}
+			} else if executable.xecIs(parity) {
+				executable.ConfFlags = []string{
+					"--base-path", filepath.Join(hrBaseDir, executable.ChainIdentity),
+					"--network-id", "2",
+					"--no-discovery",
+					"--rpc",
+					"--rpcport", strconv.Itoa(defaultRPCPort + i),
+					"--jsonrpc-apis", "eth,parity,parity_set,web3,net",
+					"--port", strconv.Itoa(defaultListenPort + i),
+					"--log-file", filepath.Join(hrBaseDir, executable.ChainIdentity, "log.txt"),
+					"--chain", "morden",
+				}
 			}
 		}
 
@@ -284,11 +298,6 @@ func collectChains(basePath string) ([]*gethExec, error) {
 		if rpcPort == "" {
 			rpcPort = strconv.Itoa(defaultRPCPort)
 		}
-
-		// c := valueInSliceFollowingKey(executable.ConfFlags, []string{"chain"})
-		// if c != "" {
-		// 	executable.ChainIdentity = c
-		// }
 
 		client, err := rpc.NewClient(fmt.Sprintf("%s:%s", hrRPCDomain, rpcPort))
 		if err != nil {
