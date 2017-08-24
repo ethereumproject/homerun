@@ -59,23 +59,40 @@ for the given client.
 RPC ports and listen address ports will be automatically incremented from from
 the default `:8545` if not explicitly configured in the flags.conf file.
 
+_Note_ that the defaults are based on __Morden__ testnet defaults for both
+geth and parity clients.
+
 The default flags are as follows:
 
 ```go
-        // set default configuration if not configured by .conf file
-        if executable.ConfFlags == nil {
-            executable.ConfFlags = []string{
-                "--datadir", hrBaseDir,
-                "--chain", executable.ChainIdentity,
-                "--nodiscover",
-                "--port", strconv.Itoa(defaultListenPort + i),
-                "--rpc",
-                "--rpcport", strconv.Itoa(defaultRPCPort + i),
-                "--cache", strconv.Itoa(defaultCacheSize),
-                "--rpcapi", strings.Join(defaultRPCAPIMethods, ","),
-                "--log-dir", filepath.Join(hrBaseDir, executable.ChainIdentity, "logs"),
-            }
+// set default configuration if not configured by .conf file
+if executable.ConfFlags == nil {
+    if executable.xecIs(geth) {
+        executable.ConfFlags = []string{
+            "--datadir", hrBaseDir,
+            "--chain", executable.ChainIdentity,
+            "--nodiscover",
+            "--port", strconv.Itoa(defaultListenPort + i),
+            "--rpc",
+            "--rpcport", strconv.Itoa(defaultRPCPort + i),
+            "--cache", strconv.Itoa(defaultCacheSize),
+            "--rpcapi", strings.Join(defaultGethRPCAPIMethods, ","),
+            "--log-dir", filepath.Join(hrBaseDir, executable.ChainIdentity, "logs"),
         }
+    } else if executable.xecIs(parity) {
+        executable.ConfFlags = []string{
+            "--base-path", filepath.Join(hrBaseDir, executable.ChainIdentity), // eg. example-basedir/green-parity
+            "--network-id", "2",
+            "--no-discovery",
+            "--rpc",
+            "--rpcport", strconv.Itoa(defaultRPCPort + i),
+            "--jsonrpc-apis", "eth,parity,parity_set,web3,net",
+            "--port", strconv.Itoa(defaultListenPort + i),
+            "--log-file", filepath.Join(hrBaseDir, executable.ChainIdentity, "log.txt"),
+            "--chain", "morden",
+        }
+    }
+}
 ```
 
 
@@ -86,8 +103,8 @@ The program is very simple.
 It's core behaviors are:
 
 - run the executables with default or configured flags
-- use RPC `admin_nodeInfo` to get the enode for each client
-- use RPC `admin_addPeer` to connect each client
+- use RPC `admin_nodeInfo`/`parity_enode` to get the enode for each client
+- use RPC `admin_addPeer`/`parity_addReservedPeer` to connect each client
 
 It does not enable mining on any of them by default; that can be switched on
 with rpc or `geth attach`.
@@ -107,5 +124,9 @@ basedir/blue/geth-v3.5.86
 basedir/blue/chain.json
 basedir/blue/flags.conf
 
-```
+basedir/green/
+basedir/green/parity
+basedir/green/chain.json
+basedir/green/flags.conf
 
+```

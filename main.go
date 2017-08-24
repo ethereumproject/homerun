@@ -279,7 +279,7 @@ func collectChains(basePath string) ([]*gethExec, error) {
 					"--no-discovery",
 					"--rpc",
 					"--rpcport", strconv.Itoa(defaultRPCPort + i),
-					"--jsonrpc-apis", "eth,parity,parity_set,web3,net",
+					"--jsonrpc-apis", strings.Join(defaultParityRPCAPIMethods, ","),
 					"--port", strconv.Itoa(defaultListenPort + i),
 					"--log-file", filepath.Join(hrBaseDir, executable.ChainIdentity, "log.txt"),
 					"--chain", "morden",
