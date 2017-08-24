@@ -204,6 +204,15 @@ func connectNodes(runs []*gethExec) {
 				} else if run.xecIs(parity) {
 					res, err = run.rpcBool("parity_addReservedPeer", []string{run2.Enode})
 				}
+
+				// if fails, try reverse (cuz parity doesn't like some port values)
+				if err != nil {
+					if run2.xecIs(geth) {
+						res, err = run2.rpcBool("admin_addPeer", []string{run.Enode})
+					} else if run2.xecIs(parity) {
+						res, err = run2.rpcBool("parity_addReservedPeer", []string{run.Enode})
+					}
+				}
 				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, "(Error: ", err, ")")
 			}
 		}
