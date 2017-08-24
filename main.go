@@ -22,16 +22,24 @@ import (
 	// "github.com/BurntSushi/toml"
 )
 
-var defaultRPCAPIMethods = []string{"admin", "eth", "net", "web3", "miner", "personal", "debug"}
+var defaultGethRPCAPIMethods = []string{"admin", "eth", "net", "web3", "miner", "personal", "debug"}
+var defaultParityRPCAPIMethods = []string{"web3", "net", "eth", "personal", "parity", "parity_set", "signer", "trace", "shh", "pubsub", "eth_pubsub"}
 var defaultCacheSize = 128
 var defaultRPCPort = 8545
-var defaultListenPort = 30303
+var defaultListenPort = 30300
 
 var errConvertJSON = errors.New("Could not convert JSON response to golang data type")
 var errRPCResponse = errors.New("No response from RPC")
 
 var hrBaseDir string
 var hrRPCDomain = "http://localhost"
+
+type xec int
+
+const (
+	geth xec = iota
+	parity
+)
 
 type gethExec struct {
 	Executable    string
@@ -45,6 +53,19 @@ type gethExec struct {
 
 func (g *gethExec) setEnode(s string) {
 	g.Enode = s
+}
+
+// isGeth checks the *name* of the executable for 'geth' prefix.
+func (g *gethExec) xecIs(e xec) bool {
+	// assume geth as default
+	var isxec = geth
+	// check for parity-ness
+	lastEl := filepath.Base(g.Executable)
+	if strings.HasPrefix(lastEl, "parity") {
+		isxec = parity
+	}
+
+	return isxec == e
 }
 
 func init() {
@@ -73,7 +94,16 @@ func main() {
 
 	// block until dones closes (interrupt or error)
 	<-dones
+}
 
+func killCmds(cmds []*exec.Cmd) {
+	for i, c := range cmds {
+		if err := c.Process.Kill(); err != nil {
+			log.Println("Failed to kill", err)
+		} else {
+			log.Printf("Killed process %d\n", i)
+		}
+	}
 }
 
 func startNodes(runs []*gethExec, dones chan error) {
@@ -102,6 +132,7 @@ func startNodes(runs []*gethExec, dones chan error) {
 			cmd.Stderr = &stderr
 			if e := cmd.Run(); e != nil {
 				log.Printf("Chain '%s' error: %s: %s\n", run.ChainIdentity, e, stderr.String())
+				killCmds(cmds) // kill all commands in case one fails
 				dones <- e
 			}
 		}(run)
@@ -114,13 +145,7 @@ func startNodes(runs []*gethExec, dones chan error) {
 		defer signal.Stop(sigc)
 		sig := <-sigc
 		log.Printf("Got %v, shutting down...", sig)
-		for i, c := range cmds {
-			if err := c.Process.Kill(); err != nil {
-				log.Fatalln("Failed to kill", err)
-			} else {
-				log.Printf("Killed process %d\n", i)
-			}
-		}
+		killCmds(cmds)
 		close(dones)
 	}()
 
@@ -141,13 +166,23 @@ func startNodes(runs []*gethExec, dones chan error) {
 						haveEnodes[run.ChainIdentity] = true
 						continue
 					}
-					resMap, err := run.rpcMap("admin_nodeInfo", []interface{}{})
-					if err != nil {
-						log.Println("no enode:", err)
-						continue
+					if run.xecIs(geth) {
+						resMap, err := run.rpcMap("admin_nodeInfo", []interface{}{})
+						if err != nil {
+							log.Println("no enode:", run.ChainIdentity, err)
+							continue
+						}
+						run.setEnode(resMap["enode"].(string))
+						log.Printf("Chain '%s': %s\n", run.ChainIdentity, run.Enode)
+					} else if run.xecIs(parity) {
+						resString, err := run.rpcString("parity_enode", []interface{}{})
+						if err != nil {
+							log.Println("no enode:", run.ChainIdentity, err)
+							continue
+						}
+						run.setEnode(resString)
+						log.Printf("Chain '%s': %s\n", run.ChainIdentity, run.Enode)
 					}
-					run.setEnode(resMap["enode"].(string))
-					log.Printf("Chain '%s': %s\n", run.ChainIdentity, run.Enode)
 				}
 			case <-done:
 				break
@@ -162,7 +197,13 @@ func connectNodes(runs []*gethExec) {
 	for i, run := range runs {
 		for j, run2 := range runs {
 			if i < j && i != j {
-				res, err := run.rpcBool("admin_addPeer", []string{run2.Enode})
+				var res bool
+				var err error
+				if run.xecIs(geth) {
+					res, err = run.rpcBool("admin_addPeer", []string{run2.Enode})
+				} else if run.xecIs(parity) {
+					res, err = run.rpcBool("parity_addReservedPeer", []string{run2.Enode})
+				}
 				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, "(Error: ", err, ")")
 			}
 		}
@@ -201,7 +242,7 @@ func collectChains(basePath string) ([]*gethExec, error) {
 			if e != nil {
 				return runnables, e
 			}
-			if perms.UserExecute() {
+			if perms.UserExecute() && filepath.Ext(file.Name()) != ".ipc" {
 				if executable.Executable == "" {
 					executable.Executable = fullFilename
 				}
@@ -227,7 +268,7 @@ func collectChains(basePath string) ([]*gethExec, error) {
 				"--rpc",
 				"--rpcport", strconv.Itoa(defaultRPCPort + i),
 				"--cache", strconv.Itoa(defaultCacheSize),
-				"--rpcapi", strings.Join(defaultRPCAPIMethods, ","),
+				"--rpcapi", strings.Join(defaultGethRPCAPIMethods, ","),
 				"--log-dir", filepath.Join(hrBaseDir, executable.ChainIdentity, "logs"),
 			}
 		}
@@ -244,10 +285,10 @@ func collectChains(basePath string) ([]*gethExec, error) {
 			rpcPort = strconv.Itoa(defaultRPCPort)
 		}
 
-		c := valueInSliceFollowingKey(executable.ConfFlags, []string{"chain"})
-		if c != "" {
-			executable.ChainIdentity = c
-		}
+		// c := valueInSliceFollowingKey(executable.ConfFlags, []string{"chain"})
+		// if c != "" {
+		// 	executable.ChainIdentity = c
+		// }
 
 		client, err := rpc.NewClient(fmt.Sprintf("%s:%s", hrRPCDomain, rpcPort))
 		if err != nil {
@@ -258,6 +299,33 @@ func collectChains(basePath string) ([]*gethExec, error) {
 		runnables = append(runnables, executable)
 	}
 	return runnables, nil
+}
+
+func (g *gethExec) rpcString(method string, params interface{}) (string, error) {
+	req := map[string]interface{}{
+		"id":      new(int64),
+		"method":  method,
+		"jsonrpc": "2.0",
+		"params":  params,
+	}
+
+	if err := g.Client.Send(req); err != nil {
+		return "", err
+	}
+
+	var res rpc.JSONSuccessResponse
+	if err := g.Client.Recv(&res); err != nil {
+		return "", err
+	}
+
+	if res.Result != nil {
+		mr, ok := res.Result.(string)
+		if ok {
+			return mr, nil
+		}
+		return "", errConvertJSON
+	}
+	return "", errRPCResponse
 }
 
 func (g *gethExec) rpcBool(method string, params interface{}) (bool, error) {
