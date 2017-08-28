@@ -199,10 +199,13 @@ func connectNodes(runs []*gethExec) {
 			if i < j && i != j {
 				var res bool
 				var err error
+				// trim off '?discport=0' <-- parity doesn't parse it
+				enodeTrim2 := strings.Split(run2.Enode, "?")[0]
+				enodeTrim1 := strings.Split(run.Enode, "?")[0]
 				if run.xecIs(geth) {
 					res, err = run.rpcBool("admin_addPeer", []string{run2.Enode})
 				} else if run.xecIs(parity) {
-					res, err = run.rpcBool("parity_addReservedPeer", []string{run2.Enode})
+					res, err = run.rpcBool("parity_addReservedPeer", []string{enodeTrim2})
 				}
 
 				// if fails, try reverse (cuz parity doesn't like some port values)
@@ -210,10 +213,10 @@ func connectNodes(runs []*gethExec) {
 					if run2.xecIs(geth) {
 						res, err = run2.rpcBool("admin_addPeer", []string{run.Enode})
 					} else if run2.xecIs(parity) {
-						res, err = run2.rpcBool("parity_addReservedPeer", []string{run.Enode})
+						res, err = run2.rpcBool("parity_addReservedPeer", []string{enodeTrim1})
 					}
 				}
-				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, res, "(Error: ", err, ")")
+				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, "ok:", res, "error:", err)
 			}
 		}
 	}
