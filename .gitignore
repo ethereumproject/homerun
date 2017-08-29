@@ -5,8 +5,7 @@ logs/
 logs*
 mlogs/
 nodekey
-geth*
-parity*
 chains/
 history*
 network/
+exec*
