@@ -1,0 +1,110 @@
+{
+  "id": "ecip1017",
+  "network": 42,
+  "name": "ECIP1017 Testchain",
+  "genesis": {
+    "nonce": "0x00006d6f7264656e",
+    "timestamp": "",
+    "parentHash": "",
+    "extraData": "",
+    "gasLimit": "0x2FEFD8",
+    "difficulty": "0x010000",
+    "mixhash": "",
+    "coinbase": "",
+    "alloc": {
+        "0000000000000000000000000000000000000001": {
+            "balance": "1"
+        },
+        "0000000000000000000000000000000000000002": {
+            "balance": "1"
+        },
+        "0000000000000000000000000000000000000003": {
+            "balance": "1"
+        },
+        "0000000000000000000000000000000000000004": {
+            "balance": "1"
+        },
+        "f7668c37022246a304fb693e7315b81b0e50d7fd": {
+            "balance": "50000000000000000000000"
+        }
+    }
+  },
+  "chainConfig": {
+    "forks": [
+      {
+        "name": "Homestead",
+        "block": 20,
+        "features": [
+          {
+            "id": "difficulty",
+            "options": {
+              "type": "homestead"
+            }
+          },
+          {
+            "id": "gastable",
+            "options": {
+              "type": "homestead"
+            }
+          }
+        ]
+      },
+      {
+        "name": "GasReprice",
+        "block": 60,
+        "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "features": [
+          {
+            "id": "gastable",
+            "options": {
+              "type": "eip150"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Diehard",
+        "block": 70,
+        "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "features": [
+          {
+            "id": "eip155",
+            "options": {
+              "chainID": 61
+            }
+          },
+          {
+            "id": "gastable",
+            "options": {
+              "type": "eip160"
+            }
+          },
+          {
+            "id": "difficulty",
+            "options": {
+              "length": 2000000,
+              "type": "ecip1010"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Gotham",
+        "block": 100,
+        "features": [
+          {
+            "id": "reward",
+            "options": {
+              "type": "ecip1017",
+              "era": 100
+            }
+          }
+        ]
+      }
+    ],
+    "badHashes": [
+    ]
+  },
+  "bootstrap": [
+  ]
+}
