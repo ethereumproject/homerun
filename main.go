@@ -32,6 +32,7 @@ var errConvertJSON = errors.New("Could not convert JSON response to golang data 
 var errRPCResponse = errors.New("No response from RPC")
 
 var hrBaseDir string
+var excludeDirs string
 var hrRPCDomain = "http://localhost"
 
 type xec int
@@ -70,6 +71,7 @@ func (g *gethExec) xecIs(e xec) bool {
 
 func init() {
 	flag.StringVar(&hrBaseDir, "dir", "", "base directory containing chain dirs")
+	flag.StringVar(&excludeDirs, "excludedirs", "", "comma,separated list of directory to not treat as chain dirs")
 	flag.StringVar(&hrRPCDomain, "rpc-domain", "http://localhost", "domain for geth rpc's")
 }
 
@@ -77,8 +79,10 @@ func main() {
 	flag.Parse()
 
 	hrBaseDir = mustMakeDirPath(hrBaseDir)
+	log.Println("hr base dir", hrBaseDir)
 	runs, err := collectChains(hrBaseDir)
 	if err != nil {
+		log.Println("collectChains err", len(runs))
 		log.Fatalln(err)
 	}
 
@@ -227,13 +231,23 @@ func collectChains(basePath string) ([]*gethExec, error) {
 
 	chainDirs, err := ioutil.ReadDir(hrBaseDir)
 	if err != nil {
+		log.Println("collect dirs cant ioutil read hrbasedir", hrBaseDir)
 		return runnables, err
 	}
 
+	outer:
 	for i, chain := range chainDirs {
 		if !chain.IsDir() {
 			log.Printf("Found non-directory: '%s', skipping...\n", chain.Name())
+			continue
 		}
+		for _, d := range strings.Split(excludeDirs, ",") {
+			if chain.Name() == d {
+				log.Printf("Found excluded dir: '%s', skipping...\n", chain.Name())
+				continue outer
+			}
+		}
+
 		// log.Println("chain.Name()", chain.Name()) // eg. 'blue'
 
 		executable := &gethExec{
@@ -241,8 +255,10 @@ func collectChains(basePath string) ([]*gethExec, error) {
 			// Client:        client, // established after configuration is parsed or assigned by default
 		}
 
-		files, err := ioutil.ReadDir(filepath.Join(hrBaseDir, chain.Name()))
+		chainpath := filepath.Join(hrBaseDir, chain.Name())
+		files, err := ioutil.ReadDir(chainpath)
 		if err != nil {
+			log.Println("collect dirs cant ioutil read hrbasedir", chainpath)
 			return runnables, err
 		}
 		for _, file := range files {
