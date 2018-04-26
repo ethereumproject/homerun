@@ -334,7 +334,7 @@ func (g *gethExec) rpcString(method string, params interface{}) (string, error) 
 		return "", err
 	}
 
-	var res rpc.JSONSuccessResponse
+	var res rpc.JSONResponse
 	if err := g.Client.Recv(&res); err != nil {
 		return "", err
 	}
@@ -361,7 +361,7 @@ func (g *gethExec) rpcBool(method string, params interface{}) (bool, error) {
 		return false, err
 	}
 
-	var res rpc.JSONSuccessResponse
+	var res rpc.JSONResponse
 	if err := g.Client.Recv(&res); err != nil {
 		return false, err
 	}
@@ -388,7 +388,7 @@ func (g *gethExec) rpcMap(method string, params interface{}) (map[string]interfa
 		return nil, err
 	}
 
-	var res rpc.JSONSuccessResponse
+	var res rpc.JSONResponse
 	if err := g.Client.Recv(&res); err != nil {
 		return nil, err
 	}
