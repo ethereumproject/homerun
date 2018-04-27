@@ -48,8 +48,9 @@ type gethExec struct {
 	Enode         string // set automatically
 	// RPCPort       int    // set in homerun, with 8545 as reference default
 	// ListenPort    int
-	Client    rpc.Client
-	ConfFlags []string // set with file anything.conf in chain subdir. should be just like a bash script but without the executable name. will parse just strings separated by spaces
+	Client       rpc.Client
+	ConfFlags    []string // set with file anything.conf in chain subdir. should be just like a bash script but without the executable name. will parse just strings separated by spaces
+	ChaindirPath string
 }
 
 func (g *gethExec) setEnode(s string) {
@@ -131,7 +132,31 @@ func startNodes(runs []*gethExec, dones chan error) {
 
 			cmds = append(cmds, cmd)
 
+			//cmd := exec.Command("echo", "'WHAT THE HECK IS UP'")
+			//
+			//// open the out file for writing
+			//outfile, err := os.Create("./out.txt")
+			//if err != nil {
+			//	panic(err)
+			//}
+			//defer outfile.Close()
+			//cmd.Stdout = outfile
+			//
+			//err = cmd.Start(); if err != nil {
+			//	panic(err)
+			//}
+			//cmd.Wait()
+			stdoutfile, e := os.Create(filepath.Join(run.ChaindirPath, "stdout.log"))
+			if e != nil {
+				// FIXME
+				panic(e)
+			}
+			defer stdoutfile.Close()
+			cmd.Stdout = stdoutfile
+
 			// capture helpful debugging error output
+			// noting that stderr can also be logged via geth->glog->a log dir specified in the --log-dir flags.conf
+			// that's why above i'm only redirecting stdout
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			if e := cmd.Run(); e != nil {
@@ -256,6 +281,8 @@ func collectChains(basePath string) ([]*gethExec, error) {
 		}
 
 		chainpath := filepath.Join(hrBaseDir, chain.Name())
+		executable.ChaindirPath = chainpath
+
 		files, err := ioutil.ReadDir(chainpath)
 		if err != nil {
 			log.Println("collect dirs cant ioutil read hrbasedir", chainpath)
