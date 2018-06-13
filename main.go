@@ -260,7 +260,7 @@ func collectChains(basePath string) ([]*gethExec, error) {
 		return runnables, err
 	}
 
-	outer:
+outer:
 	for i, chain := range chainDirs {
 		if !chain.IsDir() {
 			log.Printf("Found non-directory: '%s', skipping...\n", chain.Name())
